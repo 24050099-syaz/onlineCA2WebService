@@ -89,12 +89,12 @@ app.get("/allevents", async (req, res) => {
 });
 
 app.post("/addevent", requireAuth, async (req, res) => {
-    const { eventName, eventDate } = req.body;
+    const { eventName, eventDate, eventDescription } = req.body;
 
     try {
         await pool.execute(
-            "INSERT INTO events (eventName, eventDate) VALUES (?, ?)",
-            [eventName, eventDate]
+            "INSERT INTO events (eventName, eventDate,eventDescription) VALUES (?, ?,?)",
+            [eventName, eventDate,eventDescription]
         );
         res.status(201).json({ message: "Event added" });
     } catch {
@@ -103,12 +103,12 @@ app.post("/addevent", requireAuth, async (req, res) => {
 });
 
 app.put("/updateevent/:id", requireAuth, async (req, res) => {
-    const { eventName, eventDate } = req.body;
+    const { eventName, eventDate,eventDescription } = req.body;
 
     try {
         await pool.execute(
-            "UPDATE events SET eventName = ?, eventDate = ? WHERE id = ?",
-            [eventName, eventDate, req.params.id]
+            "UPDATE events SET eventName = ?, eventDate = ?, eventDescription = ? WHERE id = ?",
+            [eventName, eventDate,eventDescription, req.params.id]
         );
         res.json({ message: "Event updated" });
     } catch {
