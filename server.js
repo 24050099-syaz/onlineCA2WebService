@@ -35,6 +35,7 @@ app.use(
 );  
 
 function requireAuth(req, res, next) {
+    console.log("Auth header:", req.headers.authorization);
     const header = req.headers.authorization;
     if (!header) return res.status(401).json({ error: "Missing token" });
 
