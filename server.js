@@ -23,16 +23,26 @@ const pool = mysql.createPool(dbConfig);
 
 app.use(express.json());
 
+const allowedOrigins = [
+  "http://localhost:3000",
+  "https://onlineca2webservice.onrender.com"
+];
+
 app.use(
-    cors({
-        origin: (origin, callback) => {
-            if (!origin) return callback(null, true);
-            return callback(null, true);
-        },
-        methods: ["GET", "POST", "PUT", "DELETE"],
-        allowedHeaders: ["Content-Type", "Authorization"],
-    })
-);  
+  cors({
+    origin: function (origin, callback) {
+      if (!origin) return callback(null, true);
+
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+      return callback(new Error("Not allowed by CORS"));
+    },
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+    credentials: false,
+  })
+);
 
 function requireAuth(req, res, next) {
     console.log("Auth header:", req.headers.authorization);
@@ -53,6 +63,8 @@ function requireAuth(req, res, next) {
 // ---------- AUTH ----------
 
 app.post("/login", async (req, res) => {
+    console.log("RAW BODY:", req.body);
+    console.log("CONTENT-TYPE:", req.headers["content-type"]);
     const { username, password } = req.body;
 
     try {
@@ -62,7 +74,7 @@ app.post("/login", async (req, res) => {
         );
 
         if (rows.length === 0) {
-            return res.status(401).json({ error: "Invalid credentials" });
+            return res.status(401).json({ error: "Invalid    credentials" });
         }
 
         const token = jwt.sign(
