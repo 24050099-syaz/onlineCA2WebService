@@ -32,7 +32,7 @@ app.use(
         methods: ["GET", "POST", "PUT", "DELETE"],
         allowedHeaders: ["Content-Type", "Authorization"],
     })
-);
+);  
 
 function requireAuth(req, res, next) {
     const header = req.headers.authorization;
