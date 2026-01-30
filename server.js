@@ -76,7 +76,7 @@ app.post("/login", async (req, res) => {
   // Passwords are stored in hash
   try {
     const [rows] = await pool.execute(
-      "SELECT id, username, role, password_hash, is_active FROM users WHERE username = ? LIMIT 1",
+      "SELECT id, username, role, password_hash FROM users WHERE username = ? LIMIT 1",
       [username]
     );
 
