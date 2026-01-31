@@ -56,3 +56,4 @@ This project was completed by a single developer.
 | Name | Role | Responsibilities |
 |------|------|------------------|
 | **Syazwan** | Backend Developer | Backend web service, database integration, authentication, event management features, API routes, and documentation |
+| **Brian** | Backend Developer | API Routes|
