@@ -30,7 +30,7 @@ const allowedOrigins = [
   "http://localhost:3000",
   "http://localhost:3001",
   "https://onlineca2webservice.onrender.com",
-  "https://c219-ca2-team1-811ne51tg-syazs-projects.vercel.app"
+  "https://c219-ca2-team1-jhsgokmtm-syazs-projects.vercel.app"
 ];
 
 app.use(
