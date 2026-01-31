@@ -115,6 +115,67 @@ app.post("/login", async (req, res) => {
   }
 });
 
+// ---------- SIGNUP ----------
+app.post("/signup", async (req, res) => {
+  const { username, email, password } = req.body || {};
+
+  if (!username || !email || !password) {
+    return res
+      .status(400)
+      .json({ error: "Username, email and password are required" });
+  }
+
+  // Input validation
+  if (username.length < 3) {
+    return res.status(400).json({ error: "Username must be at least 3 characters" });
+  }
+  if (!email.includes("@")) {
+    return res.status(400).json({ error: "Invalid email format" });
+  }
+  if (password.length < 8) {
+    return res.status(400).json({ error: "Password must be at least 8 characters" });
+  }
+
+  try {
+    // Check if username, email exists
+    const [dup] = await pool.execute(
+      "SELECT id FROM users WHERE username = ? OR email = ? LIMIT 1",
+      [username, email]
+    );
+
+    if (dup.length > 0) {
+      return res.status(409).json({ error: "Username or email already exists" });
+    }
+    const saltRounds = 10;
+    const passwordHash = await bcrypt.hash(password, saltRounds);
+
+    // Add new user
+    const [result] = await pool.execute(
+      "INSERT INTO users (username, email, password_hash, role) VALUES (?, ?, ?, 'user')",
+      [username, email, passwordHash]
+    );
+
+    // Issue JWT and sign-in
+    const token = jwt.sign(
+      { userId: result.insertId, username, role: "user" },
+      JWT_SECRET,
+      { expiresIn: "1h" }
+    );
+
+    return res.status(201).json({
+      token,
+      user: {
+        id: result.insertId,
+        username,
+        role: "user",
+      },
+    });
+  } catch (err) {
+    console.error("Signup failed:", err);
+    return res.status(500).json({ error: "Signup failed" });
+  }
+});
+
 // ---------- EVENTS ----------
 
 app.get("/allevents", async (req, res) => {
@@ -170,72 +231,216 @@ app.delete("/deleteevent/:id", requireAuth, async (req, res) => {
     }
 });
 
-// ---------- PARTICIPANTS ----------
 
-app.post("/addparticipant", requireAuth, async (req, res) => {
-    try {
-        await pool.execute(
-            "INSERT INTO participants (name) VALUES (?)",
-            [req.body.name]
-        );
-        res.status(201).json({ message: "Participant added" });
-    } catch {
-        res.status(500).json({ error: "Failed to add participant" });
-    }
+// ---------- EVENTS ----------
+
+// Function to get authenicated user, for retrieval of joined events
+function getUserFromAuthHeader(req) {
+  const header = req.headers.authorization;
+  if (!header) return null;
+  const [type, token] = header.split(" ");
+  if (type !== "Bearer" || !token) return null;
+
+  try {
+    return jwt.verify(token, JWT_SECRET);
+  } catch {
+    return null;
+  }
+}
+
+// Get event details
+app.get("/events", async (req, res) => {
+  try {
+    const [rows] = await pool.execute(`
+      SELECT
+        e.id,
+        e.name,
+        e.description,
+        e.event_date,
+        e.max_participants,
+        e.image_url,
+        COUNT(ep.user_id) AS participant_count
+      FROM events e
+      LEFT JOIN event_participants ep ON ep.event_id = e.id
+      GROUP BY e.id
+      ORDER BY e.event_date
+    `);
+    res.json(rows);
+  } catch (err) {
+    console.error("GET /events error:", err);
+    res.status(500).json({ error: "Failed to fetch events" });
+  }
 });
 
-app.post("/events/:eventId/participants", requireAuth, async (req, res) => {
-    try {
-        await pool.execute(
-            "INSERT INTO event_participants (event_id, participant_id) VALUES (?, ?)",
-            [req.params.eventId, req.body.participantId]
-        );
-        res.status(201).json({ message: "Participant linked to event" });
-    } catch {
-        res.status(500).json({ error: "Failed to link participant" });
-    }
+// Get event by id
+app.get("/events/:id", async (req, res) => {
+  const user = getUserFromAuthHeader(req);
+  const userId = user?.userId || null;
+
+  try {
+    const [rows] = await pool.execute(
+      `
+      SELECT
+        e.id,
+        e.name,
+        e.description,
+        e.event_date,
+        e.max_participants,
+        e.image_url,
+        COUNT(ep.user_id) AS participant_count,
+        ${userId ? "EXISTS(SELECT 1 FROM event_participants epj WHERE epj.event_id = e.id AND epj.user_id = ?) AS is_joined" : "0 AS is_joined"}
+      FROM events e
+      LEFT JOIN event_participants ep ON ep.event_id = e.id
+      WHERE e.id = ?
+      GROUP BY e.id
+      LIMIT 1
+      `,
+      userId ? [userId, req.params.id] : [req.params.id]
+    );
+
+    if (!rows.length) return res.status(404).json({ error: "Event not found" });
+
+    const event = rows[0];
+    const max = Number(event.max_participants || 0);
+    const count = Number(event.participant_count || 0);
+
+    // If event count >= participant count
+    event.remaining_slots = max > 0 ? Math.max(max - count, 0) : null;
+    event.is_full = max > 0 ? count >= max : false;
+
+    res.json(event);
+  } catch (err) {
+    console.error("GET /events/:id error:", err);
+    res.status(500).json({ error: "Failed to fetch event" });
+  }
 });
 
-// ---------- STEP 7: GROUPED JOIN ----------
+// Post - Join event
+app.post("/events/:id/join", requireAuth, async (req, res) => {
+  const eventId = Number(req.params.id);
+  const userId = req.user.userId;
 
-app.get("/events-with-participants", async (req, res) => {
-    try {
-        const [rows] = await pool.execute(`
-            SELECT 
-                e.id AS event_id,
-                e.eventName,
-                e.eventDate,
-                p.id AS participant_id,
-                p.name AS participant_name
-            FROM events e
-            LEFT JOIN event_participants ep ON e.id = ep.event_id
-            LEFT JOIN participants p ON ep.participant_id = p.id
-            ORDER BY e.eventDate
-        `);
+  let conn;
+  try {
+    conn = await pool.getConnection();
+    await conn.beginTransaction();
 
-        const map = {};
+    // Prevent race condition, get current participation count
+    const [eventRows] = await conn.execute(
+      "SELECT id, max_participants, participant_count FROM events WHERE id = ? FOR UPDATE",
+      [eventId]
+    );
 
-        rows.forEach(r => {
-            if (!map[r.event_id]) {
-                map[r.event_id] = {
-                    id: r.event_id,
-                    eventName: r.eventName,
-                    eventDate: r.eventDate,
-                    participants: []
-                };
-            }
-            if (r.participant_id) {
-                map[r.event_id].participants.push({
-                    id: r.participant_id,
-                    name: r.participant_name
-                });
-            }
-        });
-
-        res.json(Object.values(map));
-    } catch {
-        res.status(500).json({ error: "Failed to fetch grouped events" });
+    if (!eventRows.length) {
+      await conn.rollback();
+      return res.status(404).json({ error: "Event not found" });
     }
+
+    const max = Number(eventRows[0].max_participants || 0);
+    const storedCount = Number(eventRows[0].participant_count || 0);
+
+    // If event count >= participant count
+    if (max > 0 && storedCount >= max) {
+      await conn.rollback();
+      return res.status(409).json({ error: "Event is full" });
+    }
+
+    // Insert to event_participants
+    try {
+      await conn.execute(
+        "INSERT INTO event_participants (user_id, event_id) VALUES (?, ?)",
+        [userId, eventId]
+      );
+    // User already joined
+    } catch (err) {
+      if (err && err.code === "ER_DUP_ENTRY") {
+        await conn.rollback();
+        return res.status(409).json({ error: "Already joined" });
+      }
+      throw err;
+    }
+
+    // Update participant count
+    await conn.execute(
+      "UPDATE events SET participant_count = participant_count + 1 WHERE id = ?",
+      [eventId]
+    );
+
+    await conn.commit();
+    res.status(201).json({ message: "Joined event" });
+  } catch (err) {
+    if (conn) await conn.rollback();
+    console.error("POST /events/:id/join error:", err);
+    res.status(500).json({ error: "Failed to join event" });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
+// Delete - unjoin event
+app.delete("/events/:id/join", requireAuth, async (req, res) => {
+  const eventId = Number(req.params.id);
+  const userId = req.user.userId;
+
+  let conn;
+  try {
+    conn = await pool.getConnection();
+    await conn.beginTransaction();
+
+    const [result] = await conn.execute(
+      "DELETE FROM event_participants WHERE user_id = ? AND event_id = ?",
+      [userId, eventId]
+    );
+
+    // Set participant count to the max - edge cases catch
+    if (result.affectedRows > 0) {
+      await conn.execute(
+        "UPDATE events SET participant_count = GREATEST(participant_count - 1, 0) WHERE id = ?",
+        [eventId]
+      );
+    }
+
+    await conn.commit();
+    res.json({ message: "Left event" });
+  } catch (err) {
+    if (conn) await conn.rollback();
+    console.error("DELETE /events/:id/join error:", err);
+    res.status(500).json({ error: "Failed to leave event" });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
+// Get list of joined events
+app.get("/my-events", requireAuth, async (req, res) => {
+  const userId = req.user.userId;
+
+  try {
+    const [rows] = await pool.execute(
+      `
+      SELECT
+        e.id,
+        e.name,
+        e.description,
+        e.event_date,
+        e.max_participants,
+        e.image_url,
+        COUNT(ep2.user_id) AS participant_count
+      FROM event_participants ep
+      JOIN events e ON e.id = ep.event_id
+      LEFT JOIN event_participants ep2 ON ep2.event_id = e.id
+      WHERE ep.user_id = ?
+      GROUP BY e.id
+      ORDER BY e.event_date
+      `,
+      [userId]
+    );
+
+    res.json(rows);
+  } catch (err) {
+    console.error("GET /my-events error:", err);
+    res.status(500).json({ error: "Failed to fetch my events" });
+  }
 });
 
 app.listen(port, () => {
