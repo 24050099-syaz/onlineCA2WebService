@@ -189,18 +189,46 @@ app.get("/allevents", async (req, res) => {
     }
 });
 
+// ---------- ADD EVENT (WEB & MOBILE) ----------
 app.post("/addevent", requireAuth, async (req, res) => {
-    const { eventName, eventDate, eventDescription } = req.body;
+  const { name, description, event_date, max_participants, image_url, image_url_mobile } = req.body;
 
-    try {
-        await pool.execute(
-            "INSERT INTO events (eventName, eventDate,eventDescription) VALUES (?, ?,?)",
-            [eventName, eventDate,eventDescription]
-        );
-        res.status(201).json({ message: "Event added" });
-    } catch {
-        res.status(500).json({ error: "Failed to add event" });
-    }
+  if (!name || !description || !event_date) {
+    return res.status(400).json({ error: "Name, description, and event_date are required" });
+  }
+
+  // Build the fields and values dynamically
+  const fields = ["name", "description", "event_date"];
+  const placeholders = ["?", "?", "?"];
+  const values = [name, description, event_date];
+
+  if (typeof max_participants !== "undefined") {
+    fields.push("max_participants");
+    placeholders.push("?");
+    values.push(max_participants);
+  }
+
+  if (typeof image_url !== "undefined") {
+    fields.push("image_url");
+    placeholders.push("?");
+    values.push(image_url);
+  }
+
+  if (typeof image_url_mobile !== "undefined") {
+    fields.push("image_url_mobile");
+    placeholders.push("?");
+    values.push(image_url_mobile);
+  }
+
+  const sql = `INSERT INTO events (${fields.join(", ")}) VALUES (${placeholders.join(", ")})`;
+
+  try {
+    await pool.execute(sql, values);
+    res.status(201).json({ message: "Event added successfully" });
+  } catch (err) {
+    console.error("POST /addevent error:", err);
+    res.status(500).json({ error: "Failed to add event" });
+  }
 });
 
 // ---------- UPDATE EVENT (WEB & MOBILE) ----------
