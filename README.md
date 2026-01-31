@@ -55,4 +55,4 @@ This project was completed by a single developer.
 
 | Name | Role | Responsibilities |
 |------|------|------------------|
-| **Syazwan** | Full Stack Developer | Backend web service, database integration, authentication, event management features, API routes, and documentation |
+| **Syazwan** | Backend Developer | Backend web service, database integration, authentication, event management features, API routes, and documentation |
