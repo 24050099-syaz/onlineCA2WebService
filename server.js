@@ -197,37 +197,46 @@ app.post("/addevent", requireAuth, async (req, res) => {
     return res.status(400).json({ error: "Name, description, and event_date are required" });
   }
 
-  // Build the fields and values dynamically
-  const fields = ["name", "description", "event_date"];
-  const placeholders = ["?", "?", "?"];
-  const values = [name, description, event_date];
-
-  if (typeof max_participants !== "undefined") {
-    fields.push("max_participants");
-    placeholders.push("?");
-    values.push(max_participants);
-  }
-
-  if (typeof image_url !== "undefined") {
-    fields.push("image_url");
-    placeholders.push("?");
-    values.push(image_url);
-  }
-
-  if (typeof image_url_mobile !== "undefined") {
-    fields.push("image_url_mobile");
-    placeholders.push("?");
-    values.push(image_url_mobile);
-  }
-
-  const sql = `INSERT INTO events (${fields.join(", ")}) VALUES (${placeholders.join(", ")})`;
-
   try {
-    await pool.execute(sql, values);
-    res.status(201).json({ message: "Event added successfully" });
+    // Build the fields and values dynamically
+    const fields = ["name", "description", "event_date", "participant_count"];
+    const placeholders = ["?", "?", "?", "0"];
+    const values = [name, description, event_date];
+
+    if (typeof max_participants !== "undefined" && max_participants !== null && max_participants !== "") {
+      fields.push("max_participants");
+      placeholders.push("?");
+      values.push(max_participants);
+    }
+
+    if (typeof image_url !== "undefined" && image_url !== null && image_url !== "") {
+      fields.push("image_url");
+      placeholders.push("?");
+      values.push(image_url);
+    }
+
+    if (typeof image_url_mobile !== "undefined" && image_url_mobile !== null && image_url_mobile !== "") {
+      fields.push("image_url_mobile");
+      placeholders.push("?");
+      values.push(image_url_mobile);
+    }
+
+    const sql = `INSERT INTO events (${fields.join(", ")}) VALUES (${placeholders.join(", ")})`;
+
+    console.log("SQL:", sql); // Debug
+    console.log("Values:", values); // Debug
+
+    const [result] = await pool.execute(sql, values);
+    
+    res.status(201).json({ 
+      message: "Event added successfully",
+      eventId: result.insertId 
+    });
   } catch (err) {
     console.error("POST /addevent error:", err);
-    res.status(500).json({ error: "Failed to add event" });
+    console.error("Error code:", err.code); // Debug
+    console.error("Error message:", err.message); // Debug
+    res.status(500).json({ error: "Failed to add event", details: err.message });
   }
 });
 
