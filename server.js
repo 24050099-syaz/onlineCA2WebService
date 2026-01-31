@@ -203,19 +203,60 @@ app.post("/addevent", requireAuth, async (req, res) => {
     }
 });
 
+// ---------- UPDATE EVENT (WEB & MOBILE) ----------
 app.put("/updateevent/:id", requireAuth, async (req, res) => {
-    const { eventName, eventDate,eventDescription } = req.body;
+  const { name, description, event_date, max_participants, image_url, image_url_mobile } = req.body;
 
-    try {
-        await pool.execute(
-            "UPDATE events SET eventName = ?, eventDate = ?, eventDescription = ? WHERE id = ?",
-            [eventName, eventDate,eventDescription, req.params.id]
-        );
-        res.json({ message: "Event updated" });
-    } catch {
-        res.status(500).json({ error: "Failed to update event" });
+  if (!name || !description || !event_date) {
+    return res.status(400).json({ error: "Name, description, and event_date are required" });
+  }
+
+  // Build the fields dynamically
+  const fields = [];
+  const values = [];
+
+  fields.push("name = ?");
+  values.push(name);
+
+  fields.push("description = ?");
+  values.push(description);
+
+  fields.push("event_date = ?");
+  values.push(event_date);
+
+  if (typeof max_participants !== "undefined") {
+    fields.push("max_participants = ?");
+    values.push(max_participants);
+  }
+
+  if (typeof image_url !== "undefined") {
+    fields.push("image_url = ?");
+    values.push(image_url);
+  }
+
+  if (typeof image_url_mobile !== "undefined") {
+    fields.push("image_url_mobile = ?");
+    values.push(image_url_mobile);
+  }
+
+  values.push(req.params.id); // Add id for WHERE clause
+
+  const sql = `UPDATE events SET ${fields.join(", ")} WHERE id = ?`;
+
+  try {
+    const [result] = await pool.execute(sql, values);
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: "Event not found" });
     }
+
+    res.json({ message: "Event updated successfully" });
+  } catch (err) {
+    console.error("PUT /updateevent/:id error:", err);
+    res.status(500).json({ error: "Failed to update event" });
+  }
 });
+
 
 app.delete("/deleteevent/:id", requireAuth, async (req, res) => {
     try {
