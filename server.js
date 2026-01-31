@@ -523,6 +523,27 @@ app.get("/my-events", requireAuth, async (req, res) => {
   }
 });
 
+app.put("/users/password", requireAuth, async (req, res) => {
+  const { newPassword } = req.body;
+  const userId = req.user.userId;
+
+  if (!newPassword || newPassword.length < 8) {
+    return res.status(400).json({ error: "Password must be at least 8 characters" });
+  }
+
+  try {
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+    await pool.execute(
+      "UPDATE users SET password_hash = ? WHERE id = ?",
+      [passwordHash, userId]
+    );
+    res.json({ message: "Password updated successfully" });
+  } catch (err) {
+    console.error("Password update failed:", err);
+    res.status(500).json({ error: "Failed to update password" });
+  }
+});
+
 app.listen(port, () => {
     console.log(`Server running on port ${port}`);
 });
