@@ -203,19 +203,48 @@ app.post("/addevent", requireAuth, async (req, res) => {
     }
 });
 
-app.put("/updateevent/:id", requireAuth, async (req, res) => {
-    const { eventName, eventDate,eventDescription } = req.body;
+// Update event by ID (for both web & mobile)
+app.put("/events/:id", requireAuth, async (req, res) => {
+  const { name, event_date, description, image_url } = req.body;
+  const eventId = req.params.id;
 
-    try {
-        await pool.execute(
-            "UPDATE events SET eventName = ?, eventDate = ?, eventDescription = ? WHERE id = ?",
-            [eventName, eventDate,eventDescription, req.params.id]
-        );
-        res.json({ message: "Event updated" });
-    } catch {
-        res.status(500).json({ error: "Failed to update event" });
+  if (!name || !event_date) {
+    return res.status(400).json({ error: "Event name and date are required" });
+  }
+
+  try {
+    // Ensure image_url stored as relative path
+    let finalImageUrl = image_url || null;
+    if (finalImageUrl?.startsWith("http")) {
+      // Strip base URL if mobile sent full URL
+      const BASE_URL = "https://onlineca2webservice.onrender.com";
+      finalImageUrl = finalImageUrl.replace(BASE_URL, "");
     }
+
+    const [result] = await pool.execute(
+      `
+      UPDATE events
+      SET
+        name = ?,
+        event_date = ?,
+        description = ?,
+        image_url = ?
+      WHERE id = ?
+      `,
+      [name, event_date, description, finalImageUrl, eventId]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: "Event not found" });
+    }
+
+    res.json({ message: "Event updated successfully" });
+  } catch (err) {
+    console.error("PUT /events/:id error:", err);
+    res.status(500).json({ error: "Failed to update event" });
+  }
 });
+
 
 app.delete("/deleteevent/:id", requireAuth, async (req, res) => {
     try {
